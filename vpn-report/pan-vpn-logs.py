@@ -45,6 +45,25 @@ def dolog(lines):
     output.close
 
 
+def get_interval(string):
+    """ Process the time interval """
+    dodebug("get_interval string : "+ string)
+    ret=''
+    match=re.match(r'(\d\d\d\d\/\d\d\/\d\d\s+\d\d:\d\d:\d\d)\s+\-\s+(\d\d\d\d\/\d\d\/\d\d\s+\d\d:\d\d:\d\d)',string)
+    if (match !=None):
+        ret ="and  (time_generated geq '" + match[1] +"') and (time_generated leq '" +match[2] + "')"
+    elif  (string == 'yesterday'):
+        ret="and (time_generated in last-calendar-day)"
+    elif (string =='week'):
+        ret="and (time_generated in last-7-calendar-days)"
+    else:
+        string=""
+       
+
+    dodebug("string: " + ret)
+    return ret
+
+
 ## start code
 #
 # Check the arguments
@@ -52,6 +71,8 @@ parser = argparse.ArgumentParser(description='Generate  VPN reports from a PaloA
 parser.add_argument('--config','-C',help='Config file,(defaults to ' + config + ')')
 parser.add_argument('--debug','-D',help='set the debug flag',action='store_true')
 parser.add_argument('--nodebug','-ND',help='unset the debug flag',dest='nodebug',action='store_true')
+parser.add_argument('--interval','--timerange',help='Intervalo de tiempo "YYYY/MM/DD HH:MM:SS - YYYY/MM/DD HH:MM:SS" ' +
+                                ' o yesterday o N days (ultimos N dias)', dest="interval")
 
 args = parser.parse_args()
 if (args.config):
@@ -61,19 +82,26 @@ if (args.config):
 if os.path.exists(config):
     Config = configparser.ConfigParser()
     Config.read(config)
-    # dodebug  ("Config file " + config + " read" )
 else:
     print("Error can't read config file " + config)
     print("Try using --config configfile to especify the config file")
     sys.exit("Error")
 
-# Load the config 
-
+# set debug ...
 debug= Config.getboolean("main","debug")
-
 if (args.nodebug):
     debug=False
 
+dodebug  ("Config file " + config + " read" )
+
+if (args.interval != ''):
+    cadtempo=get_interval(args.interval)
+elif (Config.get('vpnreport','interval') != ''):
+    cadtempo=get_interval(Config.get('vpnreport','interval'))
+else:
+    cadtempo =''
+
+   
 key= Config.get("vpnreport","key")
 if (key ==''):
     key=Config.get("main","key")
@@ -91,8 +119,7 @@ if ((mode !="panorama" ) and (mode !="firewall")):
 
 if (mode == 'firewall'):
    dodebug('Modo de configuracion: +' + mode)
-   h= Config.get("vpnreport","device").split(',')
-   hosts= [x.strip(' ') for x in h]
+   hosts= [x.strip(' ') for x in Config.get("vpnreport","device").split(',')]
 elif  (mode =="panorama"):
     dodebug ("Modo de configuracion "+mode )
     dodebug("OK , doki\n" + "key=" + key + "fw="+host +"\nmode=" + mode)
@@ -133,6 +160,7 @@ elif  (mode =="panorama"):
         dodebug(hostname + " " + model + " " + " " + ip4 + " " + serial )
         hosts.append(serial)
 
+
 ##OK ahora lo importante , tenemos:
 # mode el modo = panorama o firewall
 # Si  mode=firewall , iteramos sobre los objetos en hosts y hacemos la búsqueda en el elemento
@@ -141,6 +169,7 @@ elif  (mode =="panorama"):
 # Por ahora solo DEBUG, es decir, sacamos los los equipos que hay y exit
 
 dodebug("Modo:" + mode)
+loglines={} # contendra todas los logs ordenados por timestamp 
 for device in hosts:
     dodebug ("serial/host: "+  device)
 
@@ -178,13 +207,14 @@ for device in hosts:
         connected = xapi.log(
                     nlogs = 5000 ,
                     log_type='system' , 
-                    filter= filtercmd
+                    filter= filtercmd + cadtempo
                 )   
     except pan.xapi.PanXapiError as msg:
             print('edit:', msg)
             sys.exit(1)
-
-    dodebug("OK se ejecuta la busqueda: :" + filtercmd)
+    
+    result_dirty=[]
+    dodebug("OK se ejecuta la busqueda: :" + filtercmd + cadtempo)
     result_dirty= xapi.xml_result() ;
     result='<xml>' + result_dirty  +'</xml>'
     # Generate logs entries
@@ -197,6 +227,7 @@ for device in hosts:
     # 
     #OK now the log extraction
     for  r in lines:
+        reg={}
         #pp.pprint(r)
         timestr= r[record_time]
         #dodebug("timestr= " + timestr)
@@ -205,69 +236,22 @@ for device in hosts:
         lenr= len(records)
         for k in range(lenr -1):
         #    dodebug("k es :" + str(k) + " records["+str(k)+"] = " + records[k] +" " + r[records[k]])
-            print(r[records[k]] + ";", end="")
-        print(r[records[lenr-1]] )
+    #        print(r[records[k]] + ";", end="")
+            reg[records[k]] = r[records[k]]
+     #   print(r[records[lenr-1]] )
+        reg[records[lenr-1]] = r[records[lenr-1]]
+        loglines[unixtime] = reg
+    r=[]
+
+## OK , imprimimos los logs ordenados
+for i in sorted (loglines.keys()) : 
+    #print(i)
+    #pp.pprint(loglines[i])
+    lenr= len(records)
+    for k in range(lenr -1):
+        print(loglines[i][records[k]] + ";", end="")
+    print(loglines[i][records[lenr-1]] )
+
 sys.exit(0)
 
 #
-
-# y lo borramos 
-
-# Aqui vendria el procesamiento
-
-
-sys.exit(0)
-# Poner un TAG
-#
-#paco@telmad.fw(active)# set shared tag "middlware"
-#(container-tag: shared container-tag: tag container-tag: entry key-tag: name value: middlware)
-#((eol-matched: . #t) (eol-matched: . #t) (xpath-prefix: . /config) (context-inserted-at-end-p: . #f))
-#(shared (tag (entry (@ (name middlware)))))
-#(entry (@ (name middlware)))
-
-#<request cmd="set" obj="/config/shared/tag" cookie="1736877363563317"><entry name='middlware'/></request>
-
-sys.exit(10)
-
-xpath = "/config/shared/tag"
-element="<entry name='prueba_paco'/>"
-
-try:
-    xapi.set(xpath=xpath,
-              element=element)
-except pan.xapi.PanXapiError as msg:
-    print('edit:', msg)
-    sys.exit(1)
-
-print("OK funciona el tag !!!")
-
-### Definir una IPv4
-#<request cmd="set" obj="/config/shared/address/entry[@name='ZR_ext_mds.edugain.org_IPv4']" cookie="1736877363563317"><ip-netmask>150.254.161.84</ip-netmask></request>
-#
-xpath = "/config/shared/address/entry[@name='ZR_prueba_paco_IPv4']"
-element="<ip-netmask>22.22.22.22</ip-netmask>"
-
-try:
-    xapi.set(xpath=xpath,
-              element=element)
-except pan.xapi.PanXapiError as msg:
-    print('edit:', msg)
-    sys.exit(1)
-
-print("OK funciona el LA IPv4 !!!")
-
-## 
-# Poner un TAG a un objeto
-#paco@telmad.fw(active)# set shared address ZR_ext_mds.edugain.org_IPv4 tag "IPv4"
-#(container-tag: shared container-tag: address container-tag: entry key-tag: name value: ZR_ext_mds.edugain.org_IPv4 container-tag: tag leaf-tag: member value: IPv4 pop-tag:)
-#((eol-matched: . #t) (xpath-prefix: . /config) (context-inserted-at-end-p: . #f))
-#(shared (address (entry (@ (name ZR_ext_mds.edugain.org_IPv4)) (tag (member IPv4)))))
-#(member IPv4)
-#<request cmd="set" obj="/config/shared/address/entry[@name='ZR_ext_mds.edugain.org_IPv4']/tag" cookie="1736877363563317"><member>IPv4</member></request>
- #
-
-# Y definir un objeto compuesto
-#
-#<request cmd="set" obj="/config/shared/address-group/entry[@name='Red_ext_mds.edugain.org']/static" cookie="1736877363563317"><member>ZR_ext_mds.edugain.org_IPv4</member></request>
-# 
-
