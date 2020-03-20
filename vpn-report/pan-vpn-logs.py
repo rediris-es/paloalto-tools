@@ -47,6 +47,7 @@ def dolog(lines):
 
 def get_interval(string):
     """ Process the time interval """
+        
     dodebug("get_interval string : "+ string)
     ret=''
     match=re.match(r'(\d\d\d\d\/\d\d\/\d\d\s+\d\d:\d\d:\d\d)\s+\-\s+(\d\d\d\d\/\d\d\/\d\d\s+\d\d:\d\d:\d\d)',string)
@@ -73,6 +74,9 @@ parser.add_argument('--debug','-D',help='set the debug flag',action='store_true'
 parser.add_argument('--nodebug','-ND',help='unset the debug flag',dest='nodebug',action='store_true')
 parser.add_argument('--interval','--timerange',help='Intervalo de tiempo "YYYY/MM/DD HH:MM:SS - YYYY/MM/DD HH:MM:SS" ' +
                                 ' o yesterday o N days (ultimos N dias)', dest="interval")
+parser.add_argument('--log', help='Generate a sorted log listing', action='store_true')
+parser.add_argument('--nolog',help="Don't generate a sorted log listing", dest='log', action='store_false')
+parser.add_argument('--report',help='Genereate a report of the logs', action='store_true')
 
 args = parser.parse_args()
 if (args.config):
@@ -92,11 +96,21 @@ debug= Config.getboolean("main","debug")
 if (args.nodebug):
     debug=False
 
+
+if ('logs' in args):
+    dolog= args.log
+
+if ('report' in args):
+    doreport= args.report
+else:
+    doreport = False
+
 dodebug  ("Config file " + config + " read" )
 
-if (args.interval != ''):
-    cadtempo=get_interval(args.interval)
-elif (Config.get('vpnreport','interval') != ''):
+
+if (('interval'in args) and (args.interval != None)):
+     cadtempo=get_interval(args.interval)
+elif Config.has_option("vpnreport",'interval'):  
     cadtempo=get_interval(Config.get('vpnreport','interval'))
 else:
     cadtempo =''
@@ -243,14 +257,23 @@ for device in hosts:
         loglines[unixtime] = reg
     r=[]
 
+if (doreport):
+    # Generate report require some fields defined 
+    
+    for r in sorted (loglines.keys()):
+            if (loglines[r]['eventid'] =='auth-fail'):
+                reg= re.match(r'.*user \'(.*)\'.*Reason: (.*) auth profile \'(.*)\'.*From: (.*)', loglines[r]['eventid'])
+
+                        
+if  (dolog):
 ## OK , imprimimos los logs ordenados
-for i in sorted (loglines.keys()) : 
-    #print(i)
-    #pp.pprint(loglines[i])
-    lenr= len(records)
-    for k in range(lenr -1):
-        print(loglines[i][records[k]] + ";", end="")
-    print(loglines[i][records[lenr-1]] )
+    for i in sorted (loglines.keys()) : 
+        #print(i)
+        #pp.pprint(loglines[i])
+        lenr= len(records)
+        for k in range(lenr -1):
+            print(loglines[i][records[k]] + ";", end="")
+        print(loglines[i][records[lenr-1]] )
 
 sys.exit(0)
 
