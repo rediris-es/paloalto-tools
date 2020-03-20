@@ -31,8 +31,9 @@ Se puede definir la variable key tambien en la sección "[main]" del fichero de 
 * --config path del fichero de configuacion
 * --debug activa el flag de debug
 * --nodebug desactiva el flag de debug
-* --interval : extrae los logs de un intervalo de tiempo (ver features)
-
+* --interval : intervalo de tiempo (ver features)
+* --log: extrae logs logs
+* --report : Genera un report (work in progress)
 
 ## Features
 * Permite extraer los logs de un periodo de tiempo, para ello en se emplea la opción --interval, pudiendo definirle:
